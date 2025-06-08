@@ -5,11 +5,10 @@ from time import time
 from .optimizer import SGD
 
 def sigmoid(x):
-    # sia-tp3\src\nn.py:8: RuntimeWarning: overflow encountered in exp
-    # return 1.0 / (1.0 + np.exp(-x))
-    pos_sigmoid = lambda i: 1 / (1 + np.exp(-i))
-    neg_sigmoid = lambda i: np.exp(i) / (1 + np.exp(i))
-    return np.piecewise(x, [x > 0], [pos_sigmoid, neg_sigmoid])
+    # Numerically stable version
+    return np.where(x >= 0,
+        1 / (1 + np.exp(-x)),
+        np.exp(x) / (1 + np.exp(x)))
     
 def sigmoid_derivative(x):
     s = sigmoid(x)
@@ -27,17 +26,25 @@ def cosine(x):
 def cosine_derivative(x):
     return - np.sin(x)
 
+def relu(x):
+    return np.where(x >= 0, x, -0.01 * x)
+
+def relu_derivative(x):
+    return np.where(x >= 0, 1, 0.01)
+
 
 FUNCTIONS = {
     "sigmoid": sigmoid,
     "linear": linear,
     "cosine": cosine,
+    "relu": relu
 }
 
 DERIVATIVES = {
     "sigmoid": sigmoid_derivative,
     "linear": linear_derivative,
     "cosine": cosine_derivative,
+    "relu": relu_derivative,
 }
 
 class Layer:
@@ -73,10 +80,11 @@ class Layer:
 
 
 class PerceptronMulticapa:
-    def __init__(self, layers, optimizer=None):
+    def __init__(self, layers, optimizer=None, loss_fun="mse"):
         self.layers = layers
         self.optimizer = optimizer if optimizer else SGD()
         self.idx2class = None
+        self.loss_fun = loss_fun
         
 
     def forward(self, x):
@@ -133,7 +141,7 @@ class PerceptronMulticapa:
 
             # entrenamiento
             y_hat_train = self.batch_forward(x_train)
-            train_loss = 0.5 * np.mean((y_hat_train - y_train) ** 2)
+            train_loss = np.mean((y_hat_train - y_train) ** 2)
 
             # validacion
             val_loss = None
@@ -172,8 +180,9 @@ class PerceptronMulticapa:
             grads_db = [np.zeros_like(layer.b) for layer in self.layers]
             for x, y in zip(batch_X, batch_Y):
                 y_hat = self.forward(x)
-                grad = y_hat - y
-                batch_loss += 0.5 * np.sum((y_hat - y) ** 2)
+                
+                loss, grad = self._loss_and_grad(y, y_hat)
+                batch_loss += loss
 
                 # 2 - Calculate weights and bias grad
                 local_grads = []
@@ -194,8 +203,19 @@ class PerceptronMulticapa:
         return total_loss / n_samples
 
 
-    def _loss(self, x, y):
-        return 0.5 * sum((self.forward(xi) - yi)**2 for xi, yi in zip(x, y)) / len(x)
+    def _loss_and_grad(self, y, y_hat):
+        if self.loss_fun == "mse":
+            fun = 0.5 * np.mean((y_hat - y)**2)
+            grad = y_hat - y
+        
+        elif self.loss_fun == "bce":
+            epsilon = 1e-6
+            y_hat = np.clip(y_hat, epsilon, 1 - epsilon)
+            
+            fun = -np.mean(y * np.log(y_hat) + (1 - y) * np.log(1 - y_hat))
+            grad = -(y / y_hat - (1 - y) / (1 - y_hat))
+            
+        return fun, grad
 
 
     def predict(self, x):
