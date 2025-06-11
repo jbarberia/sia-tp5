@@ -56,6 +56,8 @@ class Layer:
         self.x = None
         self.z = None
         self.a = None
+        self.dims_in = dims_in
+        self.dims_out = dims_out
 
     def forward(self, x):
         self.x = x
@@ -76,6 +78,54 @@ class Layer:
         dw = np.outer(dz, self.x)  
         db = dz                    
         grad_input = self.w.T @ dz # sum(w * dl) * dz
+        return grad_input, dw, db
+
+
+class StochasticLayer(Layer):
+    def __init__(self, dims_in, latent_dim):
+        super().__init__(dims_in, 2 * latent_dim, activation_function="linear")
+        self.latent_dim = latent_dim
+        self.mu = None
+        self.log_var = None
+
+
+    def forward(self, x):
+        self.x = x
+        self.z_all = self.w @ x + self.b
+        
+        self.mu = self.z_all[:self.latent_dim]
+        self.log_var = self.z_all[self.latent_dim:]
+
+        # Reparameterization trick - tomo un valor muestreado normal
+        self.eps = np.random.randn(*self.mu.shape)
+        std = np.exp(0.5 * self.log_var)
+        return self.mu + std * self.eps
+        
+
+    def batch_forward(self, X):
+        Z_all = X @ self.w.T + self.b
+
+        mu = Z_all[:, :self.latent_dim]
+        log_var = Z_all[:, self.latent_dim:]
+        
+        eps = np.random.randn(*mu.shape)
+        std = np.exp(0.5 * log_var)
+        return mu + std * eps
+
+
+    def backward(self, grad_out):
+        std = np.exp(0.5 * self.log_var)
+        d_mu = 1
+        d_logvar = 0.5 * std * self.eps
+
+        dL_d_mu = grad_out * d_mu
+        dL_d_logvar = grad_out * d_logvar
+
+        dz = np.concatenate([dL_d_mu, dL_d_logvar])
+        dw = np.outer(dz, self.x)
+        db = dz
+        grad_input = self.w.T @ dz
+
         return grad_input, dw, db
 
 
