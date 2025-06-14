@@ -48,7 +48,7 @@ DERIVATIVES = {
 }
 
 class Layer:
-    def __init__(self, dims_in, dims_out, activation_function="sigmoid"):
+    def __init__(self, dims_in, dims_out, activation_function="sigmoid", dropout_rate=0.0):
         self.w = np.random.randn(dims_out, dims_in)
         self.b = np.zeros(dims_out)
         self.activation = FUNCTIONS[activation_function]
@@ -58,11 +58,16 @@ class Layer:
         self.a = None
         self.dims_in = dims_in
         self.dims_out = dims_out
+        self.dropout_rate = dropout_rate
 
     def forward(self, x):
         self.x = x
         self.z = self.w @ x + self.b
         self.a = self.activation(self.z)
+
+        if self.dropout_rate > 0:
+            self.dropout_mask = (np.random.rand(*self.a.shape) > self.dropout_rate).astype(float)
+            self.a *= self.dropout_mask
         return self.a
     
     def batch_forward(self, X):        
